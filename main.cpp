@@ -6,6 +6,7 @@
 #include <cctype>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <unordered_set>
 #include <sstream>
 
@@ -690,9 +691,9 @@ public:
     ClangCompiler(std::string  clang_executable, std::string  extension)
         : clang_executable(std::move(clang_executable)), extension("." + std::move(extension)) { }
 
-    int compile(int argc, char* argv[]) const {
-        if (argc < 2) {
-            std::cerr << "Usage: " << argv[0] << " <file1> [file2] ... [clang options]\n";
+    int compile(const std::span<std::string>& args) const {
+        if (args.size() < 2) {
+            std::cerr << "Usage: " << args[0] << " <file1> [file2] ... [clang options]\n";
             return 1;
         }
 
@@ -703,8 +704,8 @@ public:
 
         // Parse arguments
         bool is_parsing_files = true;
-        for (int i = 1; i < argc; ++i) {
-            std::string arg = argv[i];
+        for (int i = 1; i < args.size(); ++i) {
+            std::string arg = args[i];
             if (is_parsing_files && arg[0] != '-') {
                 if (arg.size() > extension.size() && arg.substr(arg.size() - extension.size()) == extension) {
                     simple_files.push_back(std::move(arg));
@@ -759,5 +760,6 @@ public:
 };
 
 int main(int argc, char* argv[]) {
-    return ClangCompiler{ "clang", "simple" }.compile(argc, argv);
+    std::vector<std::string> args(argv, argv + argc);
+    return ClangCompiler{ "clang", "simple" }.compile(args);
 }
