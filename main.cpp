@@ -4,6 +4,7 @@
 #include <utility>
 #include <vector>
 #include <cctype>
+#include <filesystem>
 #include <fstream>
 #include <unordered_set>
 #include <sstream>
@@ -641,25 +642,122 @@ public:
     }
 };
 
-int main() {
-    std::string src = R"(
-        def func() = {
-            x = 5;
-            return x;
+class ClangCompiler {
+
+    std::string clang_executable;
+    std::string extension;
+
+    static bool compile_simple_file(const std::filesystem::path& input_name, const std::filesystem::path& output_name) {
+        std::ifstream input_file(input_name);
+        if (!input_file.is_open()) {
+            std::cerr << "Error: Cannot open input file " << input_name << "\n";
+            return false;
         }
 
-        def p(a) = print(call func() + a);
-
-        def main() = {
-            call p(3);
-            x = 5;
-            call p(4);
+        std::ofstream output_file(output_name);
+        if (!output_file.is_open()) {
+            std::cerr << "Error: Cannot open output file " << output_name << "\n";
+            return false;
         }
-    )";
-    std::stringstream ss(src);
 
-    FrontEnd frontend(ss);
-    BackEnd backend(std::cout);
-    Compiler compiler { std::move(frontend), std::move(backend) };
-    compiler.run();
+        try {
+            FrontEnd frontend(input_file);
+            BackEnd backend(output_file);
+            Compiler compiler { std::move(frontend), std::move(backend) };
+            compiler.run();
+        } catch (const std::exception& e) {
+            std::cerr << "Error in " << input_name << ": " << e.what() << "\n";
+            return false;
+        }
+
+        return true;
+    }
+
+    static std::string escape_shell_arg(const std::string& arg) {
+        // Escape shell arguments to prevent injection
+        std::string escaped;
+        escaped += '"';
+        for (char c : arg) {
+            if (c == '"') escaped += "\\\"";
+            else escaped += c;
+        }
+        escaped += '"';
+        return escaped;
+    }
+
+public:
+
+    ClangCompiler(std::string  clang_executable, std::string  extension)
+        : clang_executable(std::move(clang_executable)), extension("." + std::move(extension)) { }
+
+    int compile(int argc, char* argv[]) const {
+        if (argc < 2) {
+            std::cerr << "Usage: " << argv[0] << " <file1> [file2] ... [clang options]\n";
+            return 1;
+        }
+
+        std::vector<std::string> simple_files;
+        std::vector<std::string> other_files;
+        std::vector<std::string> bc_files;
+        std::vector<std::string> extra_args;
+
+        // Parse arguments
+        bool is_parsing_files = true;
+        for (int i = 1; i < argc; ++i) {
+            std::string arg = argv[i];
+            if (is_parsing_files && arg[0] != '-') {
+                if (arg.size() > extension.size() && arg.substr(arg.size() - extension.size()) == extension) {
+                    simple_files.push_back(std::move(arg));
+                } else {
+                    other_files.push_back(std::move(arg));
+                }
+            } else {
+                is_parsing_files = false;
+                extra_args.push_back(std::move(arg));
+            }
+        }
+
+        if (simple_files.empty() && other_files.empty()) {
+            std::cerr << "Error: No input files provided\n";
+            return 1;
+        }
+
+        // Compile .simple files to .bc
+        const auto temp_dir = std::filesystem::temp_directory_path();
+        for (const auto& simple_file : simple_files) {
+            auto bc_file = temp_dir / (simple_file.substr(0, simple_file.size() - extension.size()) + ".bc");
+            if (!compile_simple_file(simple_file, bc_file)) {
+                return 1;
+            }
+            bc_files.push_back(bc_file);
+        }
+
+        // Build clang command
+        std::string clang_command = clang_executable;
+        for (const auto& bc_file : bc_files) {
+            clang_command += " " + escape_shell_arg(bc_file);
+        }
+        for (const auto& other_file : other_files) {
+            clang_command += " " + escape_shell_arg(other_file);
+        }
+        for (const auto& arg : extra_args) {
+            clang_command += " " + escape_shell_arg(arg);
+        }
+
+        // To avoid the warning from clang
+        clang_command += " -Wno-override-module";
+
+        // Run clang
+        int result = std::system(clang_command.c_str());
+        if (result != 0) {
+            std::cerr << "Error: clang failed with exit code " << result << "\n";
+            return 1;
+        }
+
+        return 0;
+    }
+};
+
+int main(int argc, char* argv[]) {
+    return ClangCompiler{ "clang", "simple" }.compile(argc, argv);
 }
