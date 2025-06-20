@@ -34,18 +34,18 @@ public:
         while (!in().eof() && std::isspace(in().peek())) in().get();
         if (in().eof()) return {EOF_TOKEN, ""};
 
-        char c = in().peek();
+        auto c = (char)in().peek();
         if (std::isdigit(c)) {
             std::string num;
             while (!in().eof() && std::isdigit(in().peek())) {
-                num += in().get();
+                num += (char)in().get();
             }
             return {NUMBER, num};
         }
         if (std::isalpha(c)) {
             std::string id;
             while (!in().eof() && (std::isalnum(in().peek()) || in().peek() == '_')) {
-                id += in().get();
+                id += (char)in().get();
             }
             if (id == "if") return {IF, id};
             if (id == "else") return {ELSE, id};
@@ -177,12 +177,12 @@ struct ExprStatement : Statement {
 };
 
 struct Visitor {
-    virtual std::string visit_node(ASTNode& node) { return ""; }
+    virtual std::string visit_node(ASTNode& node) { (void)node; return ""; }
 
     virtual std::string visit_def(FuncDef& node) { return visit_node(node); }
     virtual std::string visit_decl(FuncDecl& node) { return visit_node(node); }
 
-    virtual std::string visit_expr(Expr& node) { assert(false && "This method shouldn't be reached, or should be overridden"); }
+    virtual std::string visit_expr(Expr& node) { (void)node; assert(false && "This method shouldn't be reached, or should be overridden"); }
     virtual std::string visit_bin_expr(BinaryExpr& node) { return visit_expr(node); }
     virtual std::string visit_call(CallExpr& node) { return visit_expr(node); }
     virtual std::string visit_read(ReadExpr& node) { return visit_expr(node); }
@@ -526,6 +526,7 @@ public:
     }
 
     std::string visit_read(ReadExpr &node) override {
+        (void)node;
         const std::string tmp = "%tmp" + std::to_string(reg);
         std::string res = consume_reg();
         code() << "  " << tmp << " = alloca i32\n";
@@ -704,7 +705,7 @@ public:
 
         // Parse arguments
         bool is_parsing_files = true;
-        for (int i = 1; i < args.size(); ++i) {
+        for (size_t i = 1; i < args.size(); ++i) {
             std::string arg = args[i];
             if (is_parsing_files && arg[0] != '-') {
                 if (arg.size() > extension.size() && arg.substr(arg.size() - extension.size()) == extension) {

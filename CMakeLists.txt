@@ -8,4 +8,6 @@ if(UNIX)
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsanitize=address")
 endif()
 
+add_compile_options(-Wall -Werror -Wextra -Wpedantic -Wconversion -Wshadow)
+
 add_executable(TheSimpleCompiler main.cpp)
