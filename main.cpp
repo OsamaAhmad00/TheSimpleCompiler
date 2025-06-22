@@ -24,18 +24,22 @@ class Lexer {
     InStream* _in;
     InStream& in() { return *_in; }
 
+    bool not_eof() { return !in().eof(); }
+    char peek() { return (char)in().peek(); }
+    char consume() { return (char)in().get(); }
+
 public:
     explicit Lexer(InStream& in) : _in(&in) { }
 
     Token next_token() {
-        while (!in().eof() && in().peek() == ' ') in().get();
-        while (!in().eof() && std::isspace(in().peek())) in().get();
+        while (not_eof() && peek() == ' ') consume();
+        while (not_eof() && std::isspace(peek())) consume();
 
-        if (!in().eof() && in().peek() == '/') {
-            in().get();
-            if (!in().eof() && in().peek() == '/') {
-                while (!in().eof() && in().peek() != '\n') in().get();
-                if (!in().eof() && in().peek() == '\n') in().get();
+        if (not_eof() && peek() == '/') {
+            consume();
+            if (not_eof() && peek() == '/') {
+                while (not_eof() && peek() != '\n') consume();
+                if (not_eof() && peek() == '\n') consume();
                 return next_token();
             } else {
                 return {DIV, "/"};
@@ -44,43 +48,43 @@ public:
 
         if (in().eof()) return {EOF_TOKEN, ""};
 
-        auto c = (char)in().peek();
+        auto c = (char)peek();
         if (c == '-' || std::isdigit(c)) {
             std::string num;
             if (c == '-') {
-                num += (char)in().get();
-                if (!in().eof() && !std::isdigit(in().peek())) {
+                num += (char)consume();
+                if (not_eof() && !std::isdigit(peek())) {
                     return {MINUS, "-"};
                 }
             }
-            while (!in().eof() && std::isdigit(in().peek())) {
-                num += (char)in().get();
+            while (not_eof() && std::isdigit(peek())) {
+                num += (char)consume();
             }
             return {NUMBER, num};
         }
         if (c == '"') {
-            in().get();
+            consume();
             std::string str;
-            while (!in().eof() && in().peek() != '"') {
-                if (in().peek() == '\\') {
-                    in().get();
-                    if (!in().eof()) {
-                        char next = (char)in().get();
+            while (not_eof() && peek() != '"') {
+                if (peek() == '\\') {
+                    consume();
+                    if (not_eof()) {
+                        char next = (char)consume();
                         if (next == 'n') str += '\n';
                         else if (next == '"') str += '"';
                         else str += next;
                     }
                 } else {
-                    str += (char)in().get();
+                    str += (char)consume();
                 }
             }
-            if (!in().eof()) in().get();
+            if (not_eof()) consume();
             return {STRING, str};
         }
         if (std::isalpha(c)) {
             std::string id;
-            while (!in().eof() && (std::isalnum(in().peek()) || in().peek() == '_')) {
-                id += (char)in().get();
+            while (not_eof() && (std::isalnum(peek()) || peek() == '_')) {
+                id += (char)consume();
             }
             if (id == "if") return {IF, id};
             if (id == "else") return {ELSE, id};
@@ -98,45 +102,45 @@ public:
             if (id == "false") return {FALSE, id};
             return {IDENTIFIER, id};
         }
-        if (c == '+') { in().get(); return {PLUS, "+"}; }
-        if (c == '-') { in().get(); return {MINUS, "-"}; }
-        if (c == '*') { in().get(); return {MUL, "*"}; }
-        if (c == '/') { in().get(); return {DIV, "/"}; }
-        if (c == '%') { in().get(); return {MOD, "%"}; }
-        if (c == '&') { in().get(); return {BIT_AND, "&"}; }
-        if (c == '|') { in().get(); return {BIT_OR, "|"}; }
-        if (c == '^') { in().get(); return {BIT_XOR, "^"}; }
-        if (c == '~') { in().get(); return {BIT_NOT, "~"}; }
+        if (c == '+') { consume(); return {PLUS, "+"}; }
+        // if (c == '-') { consume(); return {MINUS, "-"}; }  // This case is handled above
+        if (c == '*') { consume(); return {MUL, "*"}; }
+        if (c == '/') { consume(); return {DIV, "/"}; }
+        if (c == '%') { consume(); return {MOD, "%"}; }
+        if (c == '&') { consume(); return {BIT_AND, "&"}; }
+        if (c == '|') { consume(); return {BIT_OR, "|"}; }
+        if (c == '^') { consume(); return {BIT_XOR, "^"}; }
+        if (c == '~') { consume(); return {BIT_NOT, "~"}; }
         if (c == '<') {
-            in().get();
-            if (!in().eof() && in().peek() == '<') { in().get(); return {SHL, "<<"}; }
-            if (!in().eof() && in().peek() == '=') { in().get(); return {LE, "<="}; }
+            consume();
+            if (not_eof() && peek() == '<') { consume(); return {SHL, "<<"}; }
+            if (not_eof() && peek() == '=') { consume(); return {LE, "<="}; }
             return {LT, "<"};
         }
         if (c == '>') {
-            in().get();
-            if (!in().eof() && in().peek() == '>') { in().get(); return {SHR, ">>"}; }
-            if (!in().eof() && in().peek() == '=') { in().get(); return {GE, ">="}; }
+            consume();
+            if (not_eof() && peek() == '>') { consume(); return {SHR, ">>"}; }
+            if (not_eof() && peek() == '=') { consume(); return {GE, ">="}; }
             return {GT, ">"};
         }
         if (c == '=') {
-            in().get();
-            if (!in().eof() && in().peek() == '=') { in().get(); return {EQEQ, "=="}; }
+            consume();
+            if (not_eof() && peek() == '=') { consume(); return {EQEQ, "=="}; }
             return {EQ, "="};
         }
         if (c == '!') {
-            in().get();
-            if (!in().eof() && in().peek() == '=') { in().get(); return {NE, "!="}; }
+            consume();
+            if (not_eof() && peek() == '=') { consume(); return {NE, "!="}; }
             return {EOF_TOKEN, ""};
         }
-        if (c == '(') { in().get(); return {LPAREN, "("}; }
-        if (c == ')') { in().get(); return {RPAREN, ")"}; }
-        if (c == '{') { in().get(); return {LBRACE, "{"}; }
-        if (c == '}') { in().get(); return {RBRACE, "}"}; }
-        if (c == ';') { in().get(); return {SEMI, ";"}; }
-        if (c == ':') { in().get(); return {COLON, ":"}; }
-        if (c == ',') { in().get(); return {COMMA, ","}; }
-        in().get();
+        if (c == '(') { consume(); return {LPAREN, "("}; }
+        if (c == ')') { consume(); return {RPAREN, ")"}; }
+        if (c == '{') { consume(); return {LBRACE, "{"}; }
+        if (c == '}') { consume(); return {RBRACE, "}"}; }
+        if (c == ';') { consume(); return {SEMI, ";"}; }
+        if (c == ':') { consume(); return {COLON, ":"}; }
+        if (c == ',') { consume(); return {COMMA, ","}; }
+        consume();
         return {EOF_TOKEN, ""};
     }
 };
@@ -616,8 +620,8 @@ class CodeGenerator : public Visitor {
     std::unordered_set<std::string> defined_vars = { };
     std::unordered_set<std::string> global_vars = { };
     std::string func_name;
-    unsigned int reg = 0;
-    unsigned int str_count = 0;
+    unsigned long long reg = 0;
+    unsigned long long str_count = 0;
 
     std::ostringstream& header() { return _header; }
     std::ostringstream& code() { return _code; }
@@ -638,7 +642,7 @@ class CodeGenerator : public Visitor {
     }
 
 public:
-    explicit CodeGenerator(OutStream& out) : out(&out) { }
+    explicit CodeGenerator(OutStream& _out) : out(&_out) { }
 
     void add_global(const std::string& name) {
         global_vars.insert(name);
@@ -949,8 +953,8 @@ class Compiler {
     FrontEnd frontend;
     BackEnd backend;
 public:
-    Compiler(FrontEnd frontend, BackEnd backend)
-        : frontend(std::move(frontend)), backend(std::move(backend)) { }
+    Compiler(FrontEnd _frontend, BackEnd _backend)
+        : frontend(std::move(_frontend)), backend(std::move(_backend)) { }
 
     void run() {
         IntermediateCode ir = frontend.process();
@@ -1000,8 +1004,8 @@ class ClangCompiler {
     }
 
 public:
-    ClangCompiler(std::string clang_executable, std::string extension)
-        : clang_executable(std::move(clang_executable)), extension("." + std::move(extension)) { }
+    ClangCompiler(std::string _clang_executable, std::string _extension)
+        : clang_executable(std::move(_clang_executable)), extension("." + std::move(_extension)) { }
 
     int compile(const std::span<std::string>& args) const {
         if (args.size() < 2) {
@@ -1034,7 +1038,7 @@ public:
             return 1;
         }
 
-        const auto temp_dir = std::filesystem::path("/tmp");
+        const auto temp_dir = std::filesystem::temp_directory_path();
         for (const auto& simple_file : simple_files) {
             auto bc_file = temp_dir / (std::filesystem::path(simple_file).stem().string() + ".bc");
             if (!compile_simple_file(simple_file, bc_file)) {
