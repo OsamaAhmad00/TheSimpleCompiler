@@ -346,6 +346,36 @@ struct ExprStatement : Statement {
     std::string accept(Visitor& visitor) override;
 };
 
+/**
+ * The Visitor class implements the Visitor design pattern for traversing and operating on AST nodes.
+ * 
+ * This pattern provides a flexible way to perform operations on AST nodes without modifying their classes.
+ * Instead of embedding operation-specific code within node classes (like code generation, type checking,
+ * or optimization), we can create separate visitor classes for each operation.
+ *
+ * A key advantage of this pattern is that visitors can maintain their own state (like symbol tables,
+ * type information, or generated code) without polluting the AST nodes with operation-specific data.
+ * For example, the CodeGenerator visitor maintains state about registers and variables, while a
+ * visitor that counts AST nodes can just contain a counter.
+ *
+ * The class provides default implementations for all visit methods that delegate to their parent's
+ * implementation. This means you only need to override the methods relevant to your specific operation.
+ * For example, a node-counting visitor might only override visit_node(), while a code generator
+ * would need separate implementations for each node type.
+ *
+ * Benefits of this approach:
+ * - Separation of concerns: Each visitor handles one specific operation
+ * - State management: Visitors can maintain operation-specific state without modifying AST nodes
+ * - Extensibility: New operations can be added by creating new visitors without modifying AST nodes
+ * - Type safety: The visitor pattern ensures proper handling of each node type
+ * - Maintainability: Operations are centralized in visitor classes rather than scattered across node classes
+ *
+ * To implement a new operation on the AST:
+ * 1. Create a new class inheriting from Visitor
+ * 2. Add any operation-specific state as member variables
+ * 3. Override the relevant visit methods for the nodes you want to process
+ * 4. Call accept() on the root node with your visitor
+ */
 struct Visitor {
     virtual std::string visit_node(ASTNode& node) { (void)node; return ""; }
 
