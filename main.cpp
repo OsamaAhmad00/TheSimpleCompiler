@@ -19,6 +19,14 @@ struct Token {
     std::string value { };
 };
 
+/**
+ * Represents a lexical analyzer that tokenizes an input stream based on predefined rules.
+ *
+ * The `Lexer` class is responsible for reading character streams and producing tokens
+ * according to its logic for whitespace, identifiers, literals, comments, and operators.
+ * It provides utilities for peeking, consuming, and recognizing characters or symbols
+ * within the input stream. 
+ */
 template <typename InStream>
 class Lexer {
     InStream* _in;
@@ -52,6 +60,23 @@ public:
 
     explicit Lexer(InStream& in) : _in(&in) { }
 
+    /**
+     * Extracts and returns the next token from the input stream.
+     *
+     * This function reads characters sequentially from the input stream
+     * to construct valid tokens based on predefined lexicon rules. It handles:
+     * - Whitespace: Skips over all whitespace characters.
+     * - Comments: Processes and skips single-line comments starting with '//' and resumes parsing.
+     * - Numbers: Parses numeric literals, including negative numbers.
+     * - Strings: Parses string literals enclosed in double quotes, handling escape sequences.
+     * - Identifiers and Keywords: Parses alphanumeric identifiers, distinguishing recognized keywords.
+     * - Operators and Delimiters: Identifies operators (+, -, *, /, etc.), delimiters (parentheses, braces, etc.), and composite operators (e.g., ==, <=, >=, <<, >>).
+     *
+     * The function uses helper methods like `peek()` to inspect the next character
+     * and `consume()` to advance the input stream. These methods ensure that EOF is handled safely.
+     *
+     * @return A `Token` object representing the next token extracted from the input stream.
+     */
     Token next_token() {
         // In the following checks, if the next char can't be EOF, don't check for EOF. Use
         // peek() or consume() directly, they check for EOF and throw an exception if encountered.
@@ -206,15 +231,15 @@ struct GlobalVarDecl : ASTNode {
 
 struct BinaryExpr : Expr {
     TokenType op;
-    Expr* left { };
-    Expr* right { };
+    Expr* left;
+    Expr* right;
     BinaryExpr(TokenType o, Expr* l, Expr* r) : op(o), left(l), right(r) { }
     std::string accept(Visitor& visitor) override;
 };
 
 struct UnaryExpr : Expr {
     TokenType op;
-    Expr* expr { };
+    Expr* expr;
     UnaryExpr(TokenType o, Expr* e) : op(o), expr(e) { }
     std::string accept(Visitor& visitor) override;
 };
@@ -243,7 +268,7 @@ struct VarExpr : Expr {
 };
 
 struct NumberExpr : Expr {
-    int64_t value { };
+    int64_t value;
     explicit NumberExpr(const int64_t v) : value(v) { }
     std::string accept(Visitor& visitor) override;
 };
@@ -261,20 +286,20 @@ struct BlockStmt : Statement {
 };
 
 struct ReturnStmt : Statement {
-    Expr* expr { };
+    Expr* expr;
     explicit ReturnStmt(Expr* e) : expr(e) { }
     std::string accept(Visitor& visitor) override;
 };
 
 struct PrintStmt : Statement {
-    Expr* expr { };
+    Expr* expr;
     explicit PrintStmt(Expr* e) : expr(e) { }
     std::string accept(Visitor& visitor) override;
 };
 
 struct AssignStmt : Statement {
     std::string var;
-    Expr* expr { };
+    Expr* expr;
     AssignStmt(std::string v, Expr* e) : var(std::move(v)), expr(e) { }
     std::string accept(Visitor& visitor) override;
 };
@@ -310,7 +335,7 @@ struct LabelStmt : Statement {
 };
 
 struct ExprStatement : Statement {
-    Expr* expr { };
+    Expr* expr;
     explicit ExprStatement(Expr* e) : expr(e) { }
     std::string accept(Visitor& visitor) override;
 };
@@ -389,6 +414,12 @@ struct IntermediateCode {
     }
 };
 
+/**
+ * The Parser class provides functionality for parsing an input token stream
+ * into an abstract syntax tree (AST) representation. It processes tokens,
+ * constructs nodes for expressions and statements, and handles various
+ * language-specific syntax rules.
+ */
 template <typename InStream>
 class Parser {
     Lexer<InStream> lexer;
@@ -403,6 +434,7 @@ class Parser {
     }
 
 public:
+
     explicit Parser(InStream& in) : lexer(in), current(lexer.next_token()) { }
 
     void consume(const TokenType type) {
@@ -412,36 +444,60 @@ public:
 
     [[nodiscard]] TokenType peek() const { return current.type; }
 
+    /**
+     * Parses an expression from the current token stream and returns the corresponding expression node.
+     *
+     * This function identifies and processes various types of expressions:
+     * - Unary expressions: Handles bitwise NOT operator (~).
+     * - Numbers: Parses numeric literals and creates a corresponding `NumberExpr` node.
+     * - Strings: Parses string literals and creates a `StringExpr` node.
+     * - Boolean values: Parses `TRUE` and `FALSE` tokens and creates a `NumberExpr` with values 1 or 0, respectively.
+     * - READ expressions: Parses function-like `READ()` and generates a `ReadExpr` node.
+     * - Identifiers: Processes variable identifiers or function calls with arguments and creates appropriate `VarExpr` or `CallExpr` nodes.
+     * - Parenthesized expressions: Handles parentheses and delegates parsing to `parse_expr_with_precedence`.
+     *
+     * The function assumes a valid token stream and relies heavily on helper methods like `consume()` to
+     * advance tokens and `new_node<T>()` to create the appropriate AST nodes.
+     *
+     * @return A pointer to the root of the parsed expression node (`Expr`).
+     * @throws std::runtime_error If an unrecognized or invalid token is encountered during parsing.
+     */
     Expr* parse_expr() {
         if (peek() == BIT_NOT) {
             consume(BIT_NOT);
             Expr* e = parse_expr();
             return new_node<UnaryExpr>(BIT_NOT, e);
         }
+        
         if (peek() == NUMBER) {
             const int64_t val = std::stoll(current.value);
             consume(NUMBER);
             return new_node<NumberExpr>(val);
         }
+
         if (peek() == STRING) {
             std::string val = current.value;
             consume(STRING);
             return new_node<StringExpr>(val);
         }
+
         if (peek() == TRUE) {
             consume(TRUE);
             return new_node<NumberExpr>(1);
         }
+
         if (peek() == FALSE) {
             consume(FALSE);
             return new_node<NumberExpr>(0);
         }
+
         if (peek() == READ) {
             consume(READ);
             consume(LPAREN);
             consume(RPAREN);
             return new_node<ReadExpr>();
         }
+
         if (peek() == IDENTIFIER) {
             std::string name = current.value;
             consume(IDENTIFIER);
@@ -449,10 +505,10 @@ public:
                 consume(LPAREN);
                 std::vector<Expr*> args;
                 if (peek() != RPAREN) {
-                    args.push_back(parse_binary_expr());
+                    args.push_back(parse_expr_with_precedence());
                     while (peek() == COMMA) {
                         consume(COMMA);
-                        args.push_back(parse_binary_expr());
+                        args.push_back(parse_expr_with_precedence());
                     }
                 }
                 consume(RPAREN);
@@ -460,16 +516,44 @@ public:
             }
             return new_node<VarExpr>(name);
         }
+
         if (peek() == LPAREN) {
             consume(LPAREN);
-            Expr* e = parse_binary_expr();
+            Expr* e = parse_expr_with_precedence();
             consume(RPAREN);
             return e;
         }
+
         throw std::runtime_error("Invalid expression: " + current.value);
     }
 
-    Expr* parse_binary_expr(const int precedence = 0) {
+
+    /**
+     * Parses an expression with operator precedence from the current token stream.
+     *
+     * This function processes a left-associative expression by recursively handling operators
+     * and their precedence levels, ensuring proper evaluation order. It constructs and returns
+     * an abstract syntax tree (AST) node representing the expression.
+     *
+     * The function performs the following:
+     * - Parses the left-hand side by delegating to `parse_expr()`.
+     * - Determines the operator's precedence based on the current token, classifying operators into tiers:
+     *   - Multiplication (`MUL`), division (`DIV`), and modulus (`MOD`) have the highest precedence.
+     *   - Bitwise shift left (`SHL`) and shift right (`SHR`) follow.
+     *   - Addition (`PLUS`) and subtraction (`MINUS`) are next.
+     *   - Bitwise AND, OR, and XOR have decreasing precedence.
+     *   - Relational operators like greater than (`GT`), less than (`LT`), less than or equal (`LE`),
+     *     greater than or equal (`GE`), equal to (`EQEQ`), and not equal (`NE`) have the lowest precedence.
+     * - Compares the newly computed precedence with the current precedence.
+     * - If the operator's precedence is higher than the provided `precedence`, it consumes the operator,
+     *   parses the right-hand side recursively, and constructs a `BinaryExpr` node.
+     * - Continues until an operator with lesser or equal precedence is encountered.
+     *
+     * @param precedence The minimum precedence level required for processing operators.
+     * @return A pointer to the root of the parsed expression subtree (`Expr`).
+     * @throws std::runtime_error If an invalid token is encountered during parsing.
+     */
+    Expr* parse_expr_with_precedence(const int precedence = 0) {
         Expr* left = parse_expr();
         while (true) {
             TokenType op = peek();
@@ -482,17 +566,39 @@ public:
                 (op == GT || op == LT || op == LE || op == GE || op == EQEQ || op == NE) ? 1 : 0;
             if (new_precedence <= precedence) break;
             consume(op);
-            Expr* right = parse_binary_expr(new_precedence);
+            Expr* right = parse_expr_with_precedence(new_precedence);
             left = new_node<BinaryExpr>(op, left, right);
         }
         return left;
     }
 
+    /**
+     * Parses a statement from the input stream and constructs a corresponding syntax tree node.
+     *
+     * This function provides support for parsing various types of statements by analyzing
+     * the input stream and branching based on detected keywords or syntax patterns.
+     * Supported statement types include:
+     * - Print statements (`PRINT`): Parses and constructs a print statement.
+     * - Conditional blocks (`IF` with `ELSEIF`/`ELSE`): Handles conditional logic with optional branches.
+     * - Loops (`WHILE`): Parses while-loop constructs.
+     * - Unconditional jumps (`GOTO`): Parses `GOTO` statements with label references.
+     * - Label declarations (`LABEL`): Parses labeled statement blocks.
+     * - Return statements (`RETURN`): Parses return expressions.
+     * - Block statements (enclosed by braces `{}`): Parses groups of statements.
+     * - Variable assignments (`LET`): Parses `LET` variable assignments.
+     * - Expression statements: Parses standalone expressions as valid statements.
+     *
+     * The function relies on helper operations such as `peek()`, `consume()`,
+     * and `parse_expr_with_precedence()` to analyze tokens, update the input stream,
+     * and construct the appropriate statement node.
+     *
+     * @return A `Statement*` object representing the parsed statement.
+     */
     Statement* parse_statement() {
         if (peek() == PRINT) {
             consume(PRINT);
             consume(LPAREN);
-            Expr* e = parse_binary_expr();
+            Expr* e = parse_expr_with_precedence();
             consume(RPAREN);
             consume(SEMI);
             return new_node<PrintStmt>(e);
@@ -501,14 +607,14 @@ public:
         if (peek() == IF) {
             consume(IF);
             consume(LPAREN);
-            Expr* cond = new_node<BooleanExpr>(parse_binary_expr());
+            Expr* cond = new_node<BooleanExpr>(parse_expr_with_precedence());
             consume(RPAREN);
             Statement* then_body = parse_statement();
             std::vector<std::pair<Expr*, Statement*>> elseif_branches;
             while (peek() == ELSEIF) {
                 consume(ELSEIF);
                 consume(LPAREN);
-                Expr* elseif_cond = new_node<BooleanExpr>(parse_binary_expr());
+                Expr* elseif_cond = new_node<BooleanExpr>(parse_expr_with_precedence());
                 consume(RPAREN);
                 Statement* elseif_body = parse_statement();
                 elseif_branches.emplace_back(elseif_cond, elseif_body);
@@ -524,7 +630,7 @@ public:
         if (peek() == WHILE) {
             consume(WHILE);
             consume(LPAREN);
-            Expr* cond = new_node<BooleanExpr>(parse_binary_expr());
+            Expr* cond = new_node<BooleanExpr>(parse_expr_with_precedence());
             consume(RPAREN);
             Statement* body = parse_statement();
             return new_node<WhileStmt>(cond, body);
@@ -549,7 +655,7 @@ public:
 
         if (peek() == RETURN) {
             consume(RETURN);
-            Expr* e = parse_binary_expr();
+            Expr* e = parse_expr_with_precedence();
             consume(SEMI);
             return new_node<ReturnStmt>(e);
         }
@@ -569,12 +675,12 @@ public:
             std::string var = current.value;
             consume(IDENTIFIER);
             consume(EQ);
-            Expr* e = parse_binary_expr();
+            Expr* e = parse_expr_with_precedence();
             consume(SEMI);
             return new_node<AssignStmt>(var, e);
         }
 
-        auto expr_statement = new_node<ExprStatement>(parse_binary_expr());
+        auto expr_statement = new_node<ExprStatement>(parse_expr_with_precedence());
         consume(SEMI);
         return expr_statement;
     }
@@ -620,7 +726,7 @@ public:
         Expr* init = nullptr;
         if (peek() == EQ) {
             consume(EQ);
-            init = parse_binary_expr();
+            init = parse_expr_with_precedence();
         }
         consume(SEMI);
         return new_node<GlobalVarDecl>(name, init);
