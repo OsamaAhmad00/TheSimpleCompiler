@@ -11,8 +11,8 @@
 #include <sstream>
 
 enum TokenType { NUMBER, STRING, IDENTIFIER, IF, ELSE, ELSEIF, WHILE, GOTO, PRINT, READ, RETURN, DEF, EXTERN,
-    PLUS, MINUS, MUL, DIV, MOD, BIT_AND, BIT_OR, BIT_XOR, BIT_NOT, SHL, SHR,
-    LPAREN, RPAREN, LBRACE, RBRACE, SEMI, GT, LT, LE, GE, EQEQ, NE, EQ, COLON, COMMA, LABEL, LET, TRUE, FALSE, EOF_TOKEN };
+    PLUS, MINUS, MUL, DIV, MOD, BIT_AND, BIT_OR, BIT_XOR, BIT_NOT, SHL, SHR, LPAREN, RPAREN, LBRACE, RBRACE,
+    SEMI, GT, LT, LE, GE, EQEQ, NE, EQ, COLON, COMMA, LABEL, LET, TRUE, FALSE, EOF_TOKEN };
 
 struct Token {
     TokenType type { };
@@ -24,67 +24,87 @@ class Lexer {
     InStream* _in;
     InStream& in() { return *_in; }
 
-    bool not_eof() { return !in().eof(); }
-    char peek() { return (char)in().peek(); }
-    char consume() { return (char)in().get(); }
+    char peek() {
+        if (is_eof()) throw std::runtime_error("Unexpected end of file");
+        return (char)in().peek();
+    }
+
+    // Quick fix: peek first to recognize EOF even without consumption
+    bool is_eof() { in().peek(); return in().eof(); }
+
+    char consume() {
+        if (is_eof()) throw std::runtime_error("Unexpected end of file");
+        return (char)in().get();
+    }
+
+    void consume(char c, bool or_eof = false) {
+        if (is_eof()) {
+            if (or_eof) return;
+            throw std::runtime_error("Expected character " + std::string(1, c) + ", got end of file");
+        }
+        auto next = consume();
+        if (next != c) {
+            throw std::runtime_error("Expected character '" + std::string(1, c) + "', got " + std::string(1, next));
+        }
+    }
 
 public:
+
     explicit Lexer(InStream& in) : _in(&in) { }
 
     Token next_token() {
-        while (not_eof() && peek() == ' ') consume();
-        while (not_eof() && std::isspace(peek())) consume();
+        // In the following checks, if the next char can't be EOF, don't check for EOF. Use
+        // peek() or consume() directly, they check for EOF and throw an exception if encountered.
 
-        if (not_eof() && peek() == '/') {
-            consume();
-            if (not_eof() && peek() == '/') {
-                while (not_eof() && peek() != '\n') consume();
-                if (not_eof() && peek() == '\n') consume();
+        while (!is_eof() && std::isspace(peek())) consume();
+
+        if (is_eof()) return {EOF_TOKEN, ""};
+
+        auto c = consume();
+
+        if (c == '/') {
+            if (peek() == '/') {
+                while (!is_eof() && peek() != '\n') consume();
+                consume('\n', true);
                 return next_token();
-            } else {
-                return {DIV, "/"};
             }
+            return {DIV, "/"};
         }
 
-        if (in().eof()) return {EOF_TOKEN, ""};
-
-        auto c = (char)peek();
         if (c == '-' || std::isdigit(c)) {
-            std::string num;
-            if (c == '-') {
-                num += (char)consume();
-                if (not_eof() && !std::isdigit(peek())) {
-                    return {MINUS, "-"};
-                }
+            if (c == '-' && !std::isdigit(peek())) {
+                return {MINUS, "-"};
             }
-            while (not_eof() && std::isdigit(peek())) {
-                num += (char)consume();
+            std::string num(1, c);
+            while (std::isdigit(peek())) {
+                num += consume();
             }
             return {NUMBER, num};
         }
+
         if (c == '"') {
-            consume();
             std::string str;
-            while (not_eof() && peek() != '"') {
+            while (peek() != '"') {
                 if (peek() == '\\') {
+                    // String Escaping
                     consume();
-                    if (not_eof()) {
-                        char next = (char)consume();
-                        if (next == 'n') str += '\n';
-                        else if (next == '"') str += '"';
-                        else str += next;
-                    }
+                    char next = consume();
+                    // You can add more here
+                    if (next == 'n') str += '\n';
+                    else if (next == 't') str += '\t';
+                    else str += next;
                 } else {
-                    str += (char)consume();
+                    str += consume();
                 }
             }
-            if (not_eof()) consume();
+            consume('"');
             return {STRING, str};
         }
+
         if (std::isalpha(c)) {
-            std::string id;
-            while (not_eof() && (std::isalnum(peek()) || peek() == '_')) {
-                id += (char)consume();
+            std::string id(1, c);
+            while (std::isalnum(peek()) || peek() == '_') {
+                id += consume();
             }
             if (id == "if") return {IF, id};
             if (id == "else") return {ELSE, id};
@@ -102,45 +122,46 @@ public:
             if (id == "false") return {FALSE, id};
             return {IDENTIFIER, id};
         }
-        if (c == '+') { consume(); return {PLUS, "+"}; }
-        // if (c == '-') { consume(); return {MINUS, "-"}; }  // This case is handled above
-        if (c == '*') { consume(); return {MUL, "*"}; }
-        if (c == '/') { consume(); return {DIV, "/"}; }
-        if (c == '%') { consume(); return {MOD, "%"}; }
-        if (c == '&') { consume(); return {BIT_AND, "&"}; }
-        if (c == '|') { consume(); return {BIT_OR, "|"}; }
-        if (c == '^') { consume(); return {BIT_XOR, "^"}; }
-        if (c == '~') { consume(); return {BIT_NOT, "~"}; }
+
+        if (c == '+') { return {PLUS, "+"}; }
+        // if (c == '-') { return {MINUS, "-"}; }  // This case is handled above
+        if (c == '*') { return {MUL, "*"}; }
+        if (c == '/') { return {DIV, "/"}; }
+        if (c == '%') { return {MOD, "%"}; }
+        if (c == '&') { return {BIT_AND, "&"}; }
+        if (c == '|') { return {BIT_OR, "|"}; }
+        if (c == '^') { return {BIT_XOR, "^"}; }
+        if (c == '~') { return {BIT_NOT, "~"}; }
+        if (c == '(') { return {LPAREN, "("}; }
+        if (c == ')') { return {RPAREN, ")"}; }
+        if (c == '{') { return {LBRACE, "{"}; }
+        if (c == '}') { return {RBRACE, "}"}; }
+        if (c == ';') { return {SEMI, ";"}; }
+        if (c == ':') { return {COLON, ":"}; }
+        if (c == ',') { return {COMMA, ","}; }
+
         if (c == '<') {
-            consume();
-            if (not_eof() && peek() == '<') { consume(); return {SHL, "<<"}; }
-            if (not_eof() && peek() == '=') { consume(); return {LE, "<="}; }
+            if (peek() == '<') { consume(); return {SHL, "<<"}; }
+            if (peek() == '=') { consume(); return {LE, "<="}; }
             return {LT, "<"};
         }
+
         if (c == '>') {
-            consume();
-            if (not_eof() && peek() == '>') { consume(); return {SHR, ">>"}; }
-            if (not_eof() && peek() == '=') { consume(); return {GE, ">="}; }
+            if (peek() == '>') { consume(); return {SHR, ">>"}; }
+            if (peek() == '=') { consume(); return {GE, ">="}; }
             return {GT, ">"};
         }
+
         if (c == '=') {
-            consume();
-            if (not_eof() && peek() == '=') { consume(); return {EQEQ, "=="}; }
+            if (peek() == '=') { consume(); return {EQEQ, "=="}; }
             return {EQ, "="};
         }
+
         if (c == '!') {
-            consume();
-            if (not_eof() && peek() == '=') { consume(); return {NE, "!="}; }
+            if (peek() == '=') { consume(); return {NE, "!="}; }
             return {EOF_TOKEN, ""};
         }
-        if (c == '(') { consume(); return {LPAREN, "("}; }
-        if (c == ')') { consume(); return {RPAREN, ")"}; }
-        if (c == '{') { consume(); return {LBRACE, "{"}; }
-        if (c == '}') { consume(); return {RBRACE, "}"}; }
-        if (c == ';') { consume(); return {SEMI, ";"}; }
-        if (c == ':') { consume(); return {COLON, ":"}; }
-        if (c == ',') { consume(); return {COMMA, ","}; }
-        consume();
+
         return {EOF_TOKEN, ""};
     }
 };
@@ -295,59 +316,59 @@ struct ExprStatement : Statement {
 };
 
 struct Visitor {
-    virtual std::string visit_node(ASTNode* node) { (void)node; return ""; }
+    virtual std::string visit_node(ASTNode& node) { (void)node; return ""; }
 
-    virtual std::string visit_def(FuncDef* node) { return visit_node(node); }
-    virtual std::string visit_decl(FuncDecl* node) { return visit_node(node); }
+    virtual std::string visit_def(FuncDef& node) { return visit_node(node); }
+    virtual std::string visit_decl(FuncDecl& node) { return visit_node(node); }
 
-    virtual std::string visit_global_var_decl(GlobalVarDecl* node) { return visit_node(node); }
-    virtual std::string visit_expr(Expr* node) { (void)node; assert(false && "This method shouldn't be reached, or should be overridden"); }
-    virtual std::string visit_bin_expr(BinaryExpr* node) { return visit_expr(node); }
-    virtual std::string visit_unary_expr(UnaryExpr* node) { return visit_expr(node); }
-    virtual std::string visit_bool_expr(BooleanExpr* node) { return visit_expr(node); }
-    virtual std::string visit_call(CallExpr* node) { return visit_expr(node); }
-    virtual std::string visit_read(ReadExpr* node) { return visit_expr(node); }
-    virtual std::string visit_var(VarExpr* node) { return visit_expr(node); }
-    virtual std::string visit_num(NumberExpr* node) { return visit_expr(node); }
-    virtual std::string visit_string(StringExpr* node) { return visit_expr(node); }
+    virtual std::string visit_global_var_decl(GlobalVarDecl& node) { return visit_node(node); }
+    virtual std::string visit_expr(Expr& node) { (void)node; assert(false && "This method shouldn't be reached, or should be overridden"); }
+    virtual std::string visit_bin_expr(BinaryExpr& node) { return visit_expr(node); }
+    virtual std::string visit_unary_expr(UnaryExpr& node) { return visit_expr(node); }
+    virtual std::string visit_bool_expr(BooleanExpr& node) { return visit_expr(node); }
+    virtual std::string visit_call(CallExpr& node) { return visit_expr(node); }
+    virtual std::string visit_read(ReadExpr& node) { return visit_expr(node); }
+    virtual std::string visit_var(VarExpr& node) { return visit_expr(node); }
+    virtual std::string visit_num(NumberExpr& node) { return visit_expr(node); }
+    virtual std::string visit_string(StringExpr& node) { return visit_expr(node); }
 
-    virtual std::string visit_statement(Statement* node) { return visit_node(node); }
-    virtual std::string visit_block(BlockStmt* node) { return visit_statement(node); }
-    virtual std::string visit_return(ReturnStmt* node) { return visit_statement(node); }
-    virtual std::string visit_print(PrintStmt* node) { return visit_statement(node); }
-    virtual std::string visit_assign(AssignStmt* node) { return visit_statement(node); }
-    virtual std::string visit_if(IfStmt* node) { return visit_statement(node); }
-    virtual std::string visit_while(WhileStmt* node) { return visit_statement(node); }
-    virtual std::string visit_goto(GotoStmt* node) { return visit_statement(node); }
-    virtual std::string visit_label(LabelStmt* node) { return visit_statement(node); }
-    virtual std::string visit_expr_statement(ExprStatement* node) { return visit_statement(node); }
+    virtual std::string visit_statement(Statement& node) { return visit_node(node); }
+    virtual std::string visit_block(BlockStmt& node) { return visit_statement(node); }
+    virtual std::string visit_return(ReturnStmt& node) { return visit_statement(node); }
+    virtual std::string visit_print(PrintStmt& node) { return visit_statement(node); }
+    virtual std::string visit_assign(AssignStmt& node) { return visit_statement(node); }
+    virtual std::string visit_if(IfStmt& node) { return visit_statement(node); }
+    virtual std::string visit_while(WhileStmt& node) { return visit_statement(node); }
+    virtual std::string visit_goto(GotoStmt& node) { return visit_statement(node); }
+    virtual std::string visit_label(LabelStmt& node) { return visit_statement(node); }
+    virtual std::string visit_expr_statement(ExprStatement& node) { return visit_statement(node); }
 
     virtual ~Visitor() = default;
 };
 
-std::string ASTNode::accept(Visitor &visitor) { return visitor.visit_node(this); }
-std::string Expr::accept(Visitor &visitor) { return visitor.visit_expr(this); }
-std::string BinaryExpr::accept(Visitor &visitor) { return visitor.visit_bin_expr(this); }
-std::string UnaryExpr::accept(Visitor &visitor) { return visitor.visit_unary_expr(this); }
-std::string BooleanExpr::accept(Visitor &visitor) { return visitor.visit_bool_expr(this); }
-std::string CallExpr::accept(Visitor &visitor) { return visitor.visit_call(this); }
-std::string ReadExpr::accept(Visitor &visitor) { return visitor.visit_read(this); }
-std::string VarExpr::accept(Visitor &visitor) { return visitor.visit_var(this); }
-std::string NumberExpr::accept(Visitor &visitor) { return visitor.visit_num(this); }
-std::string StringExpr::accept(Visitor &visitor) { return visitor.visit_string(this); }
-std::string Statement::accept(Visitor &visitor) { return visitor.visit_statement(this); }
-std::string BlockStmt::accept(Visitor &visitor) { return visitor.visit_block(this); }
-std::string ReturnStmt::accept(Visitor &visitor) { return visitor.visit_return(this); }
-std::string PrintStmt::accept(Visitor &visitor) { return visitor.visit_print(this); }
-std::string AssignStmt::accept(Visitor &visitor) { return visitor.visit_assign(this); }
-std::string IfStmt::accept(Visitor &visitor) { return visitor.visit_if(this); }
-std::string WhileStmt::accept(Visitor &visitor) { return visitor.visit_while(this); }
-std::string GotoStmt::accept(Visitor &visitor) { return visitor.visit_goto(this); }
-std::string LabelStmt::accept(Visitor &visitor) { return visitor.visit_label(this); }
-std::string ExprStatement::accept(Visitor &visitor) { return visitor.visit_expr_statement(this); }
-std::string FuncDef::accept(Visitor &visitor) { return visitor.visit_def(this); }
-std::string FuncDecl::accept(Visitor &visitor) { return visitor.visit_decl(this); }
-std::string GlobalVarDecl::accept(Visitor &visitor) { return visitor.visit_global_var_decl(this); }
+std::string ASTNode::accept(Visitor &visitor) { return visitor.visit_node(*this); }
+std::string Expr::accept(Visitor &visitor) { return visitor.visit_expr(*this); }
+std::string BinaryExpr::accept(Visitor &visitor) { return visitor.visit_bin_expr(*this); }
+std::string UnaryExpr::accept(Visitor &visitor) { return visitor.visit_unary_expr(*this); }
+std::string BooleanExpr::accept(Visitor &visitor) { return visitor.visit_bool_expr(*this); }
+std::string CallExpr::accept(Visitor &visitor) { return visitor.visit_call(*this); }
+std::string ReadExpr::accept(Visitor &visitor) { return visitor.visit_read(*this); }
+std::string VarExpr::accept(Visitor &visitor) { return visitor.visit_var(*this); }
+std::string NumberExpr::accept(Visitor &visitor) { return visitor.visit_num(*this); }
+std::string StringExpr::accept(Visitor &visitor) { return visitor.visit_string(*this); }
+std::string Statement::accept(Visitor &visitor) { return visitor.visit_statement(*this); }
+std::string BlockStmt::accept(Visitor &visitor) { return visitor.visit_block(*this); }
+std::string ReturnStmt::accept(Visitor &visitor) { return visitor.visit_return(*this); }
+std::string PrintStmt::accept(Visitor &visitor) { return visitor.visit_print(*this); }
+std::string AssignStmt::accept(Visitor &visitor) { return visitor.visit_assign(*this); }
+std::string IfStmt::accept(Visitor &visitor) { return visitor.visit_if(*this); }
+std::string WhileStmt::accept(Visitor &visitor) { return visitor.visit_while(*this); }
+std::string GotoStmt::accept(Visitor &visitor) { return visitor.visit_goto(*this); }
+std::string LabelStmt::accept(Visitor &visitor) { return visitor.visit_label(*this); }
+std::string ExprStatement::accept(Visitor &visitor) { return visitor.visit_expr_statement(*this); }
+std::string FuncDef::accept(Visitor &visitor) { return visitor.visit_def(*this); }
+std::string FuncDecl::accept(Visitor &visitor) { return visitor.visit_decl(*this); }
+std::string GlobalVarDecl::accept(Visitor &visitor) { return visitor.visit_global_var_decl(*this); }
 
 struct IntermediateCode {
     std::vector<GlobalVarDecl*> globals;
@@ -452,12 +473,13 @@ public:
         Expr* left = parse_expr();
         while (true) {
             TokenType op = peek();
-            const int new_precedence = (op == PLUS || op == MINUS) ? 10 :
-                                       (op == MUL || op == DIV || op == MOD) ? 20 :
-                                       (op == GT || op == LT || op == LE || op == GE || op == EQEQ || op == NE) ? 5 :
-                                       (op == BIT_AND) ? 8 :
-                                       (op == BIT_OR || op == BIT_XOR) ? 6 :
-                                       (op == SHL || op == SHR) ? 12 : 0;
+            const int new_precedence =
+                (op == MUL || op == DIV || op == MOD)                                    ? 6 :
+                (op == SHL || op == SHR)                                                 ? 5 :
+                (op == PLUS || op == MINUS)                                              ? 4 :
+                (op == BIT_AND)                                                          ? 3 :
+                (op == BIT_OR || op == BIT_XOR)                                          ? 2 :
+                (op == GT || op == LT || op == LE || op == GE || op == EQEQ || op == NE) ? 1 : 0;
             if (new_precedence <= precedence) break;
             consume(op);
             Expr* right = parse_binary_expr(new_precedence);
@@ -475,6 +497,7 @@ public:
             consume(SEMI);
             return new_node<PrintStmt>(e);
         }
+
         if (peek() == IF) {
             consume(IF);
             consume(LPAREN);
@@ -497,6 +520,7 @@ public:
             }
             return new_node<IfStmt>(cond, then_body, elseif_branches, else_body);
         }
+
         if (peek() == WHILE) {
             consume(WHILE);
             consume(LPAREN);
@@ -505,6 +529,7 @@ public:
             Statement* body = parse_statement();
             return new_node<WhileStmt>(cond, body);
         }
+
         if (peek() == GOTO) {
             consume(GOTO);
             std::string label = current.value;
@@ -512,6 +537,7 @@ public:
             consume(SEMI);
             return new_node<GotoStmt>(label);
         }
+
         if (peek() == LABEL) {
             consume(LABEL);
             std::string label = current.value;
@@ -520,12 +546,14 @@ public:
             Statement* stmt = parse_statement();
             return new_node<LabelStmt>(label, stmt);
         }
+
         if (peek() == RETURN) {
             consume(RETURN);
             Expr* e = parse_binary_expr();
             consume(SEMI);
             return new_node<ReturnStmt>(e);
         }
+
         if (peek() == LBRACE) {
             consume(LBRACE);
             std::vector<Statement*> statements;
@@ -535,6 +563,7 @@ public:
             consume(RBRACE);
             return new_node<BlockStmt>(statements);
         }
+
         if (peek() == LET) {
             consume(LET);
             std::string var = current.value;
@@ -544,6 +573,7 @@ public:
             consume(SEMI);
             return new_node<AssignStmt>(var, e);
         }
+
         auto expr_statement = new_node<ExprStatement>(parse_binary_expr());
         consume(SEMI);
         return expr_statement;
@@ -648,50 +678,50 @@ public:
         global_vars.insert(name);
     }
 
-    std::string visit_global_var_decl(GlobalVarDecl* node) override {
-        add_global(node->name);
-        std::string init_val = node->init ? node->init->accept(*this) : "0";
-        header() << "@" << node->name << " = global i64 " << init_val << "\n";
+    std::string visit_global_var_decl(GlobalVarDecl& node) override {
+        add_global(node.name);
+        std::string init_val = node.init ? node.init->accept(*this) : "0";
+        header() << "@" << node.name << " = global i64 " << init_val << "\n";
         return "";
     }
 
-    std::string visit_def(FuncDef* node) override {
+    std::string visit_def(FuncDef& node) override {
         reset();
-        func_name = node->name;
-        code() << "define i64 @" << node->name << "(";
-        for (size_t i = 0; i < node->params.size(); ++i) {
-            code() << "i64 %" << node->params[i];
-            if (i < node->params.size() - 1) code() << ", ";
+        func_name = node.name;
+        code() << "define i64 @" << node.name << "(";
+        for (size_t i = 0; i < node.params.size(); ++i) {
+            code() << "i64 %" << node.params[i];
+            if (i < node.params.size() - 1) code() << ", ";
         }
         code() << ") {\n";
         code() << "entry:\n";
-        for (const auto& param : node->params) {
-            auto param_name = param + "." + node->name;
+        for (const auto& param : node.params) {
+            auto param_name = param + "." + node.name;
             define_var(param_name);
             code() << "  store i64 %" << param << ", ptr %" << param_name << "\n";
         }
-        node->body->accept(*this);
+        node.body->accept(*this);
         code() << "  ret i64 0\n";
         code() << "}\n\n";
         return "";
     }
 
-    std::string visit_decl(FuncDecl* node) override {
-        header() << "declare i64 @" << node->name << "(";
-        for (size_t i = 0; i < node->params.size(); ++i) {
+    std::string visit_decl(FuncDecl& node) override {
+        header() << "declare i64 @" << node.name << "(";
+        for (size_t i = 0; i < node.params.size(); ++i) {
             header() << "i64";
-            if (i < node->params.size() - 1) header() << ", ";
+            if (i < node.params.size() - 1) header() << ", ";
         }
         header() << ")\n";
         return "";
     }
 
-    std::string visit_bin_expr(BinaryExpr* node) override {
-        std::string l = node->left->accept(*this);
-        std::string r = node->right->accept(*this);
+    std::string visit_bin_expr(BinaryExpr& node) override {
+        std::string l = node.left->accept(*this);
+        std::string r = node.right->accept(*this);
         std::string inst;
         bool is_boolean = false;
-        switch (node->op) {
+        switch (node.op) {
             case PLUS: inst = "add"; break;
             case MINUS: inst = "sub"; break;
             case MUL: inst = "mul"; break;
@@ -721,10 +751,10 @@ public:
         return res;
     }
 
-    std::string visit_unary_expr(UnaryExpr* node) override {
-        std::string e = node->expr->accept(*this);
+    std::string visit_unary_expr(UnaryExpr& node) override {
+        std::string e = node.expr->accept(*this);
         std::string inst;
-        switch (node->op) {
+        switch (node.op) {
             case BIT_NOT: inst = "xor"; break;
             default: assert(false && "Invalid unary operator"); return "";
         }
@@ -733,21 +763,21 @@ public:
         return res;
     }
 
-    std::string visit_bool_expr(BooleanExpr* node) override {
-        std::string val = node->expr->accept(*this);
+    std::string visit_bool_expr(BooleanExpr& node) override {
+        std::string val = node.expr->accept(*this);
         std::string res = consume_reg();
         code() << "  " << res << " = trunc i64 " << val << " to i1\n";
         return res;
     }
 
-    std::string visit_call(CallExpr* node) override {
+    std::string visit_call(CallExpr& node) override {
         std::vector<std::string> arg_regs;
-        arg_regs.reserve(node->args.size());
-        for (auto* arg : node->args) {
+        arg_regs.reserve(node.args.size());
+        for (auto* arg : node.args) {
             arg_regs.push_back(arg->accept(*this));
         }
         std::string res = consume_reg();
-        code() << "  " << res << " = call i64 @" << node->func_name << "(";
+        code() << "  " << res << " = call i64 @" << node.func_name << "(";
         for (size_t i = 0; i < arg_regs.size(); ++i) {
             code() << "i64 " << arg_regs[i];
             if (i < arg_regs.size() - 1) code() << ", ";
@@ -756,7 +786,7 @@ public:
         return res;
     }
 
-    std::string visit_read(ReadExpr* node) override {
+    std::string visit_read(ReadExpr& node) override {
         (void)node;
 
         const std::string ptr = consume_reg();
@@ -764,110 +794,111 @@ public:
         code() << "  " << ptr << " = alloca i64\n";
         code() << "  " << ptr_i64 << " = ptrtoint ptr " << ptr << " to i64\n";
 
-        code() << "  call i32 (i64, ...) @scanf(i64 ptrtoint (ptr getelementptr inbounds ([4 x i8], ptr @.read_num, i64 0, i64 0) to i64), i64 " << ptr_i64 << ")\n";
+        code() << "  call i32 (i64, ...) @scanf(i64 ptrtoint (ptr getelementptr inbounds "
+                  "([4 x i8], ptr @.read_num, i64 0, i64 0) to i64), i64 " << ptr_i64 << ")\n";
 
         std::string res = consume_reg();
         code() << "  " << res << " = load i64, ptr " << ptr << "\n";
         return res;
     }
 
-    std::string visit_var(VarExpr* node) override {
+    std::string visit_var(VarExpr& node) override {
         std::string res = consume_reg();
-        if (global_vars.count(node->name)) {
-            code() << "  " << res << " = load i64, ptr @" << node->name << "\n";
+        if (global_vars.count(node.name)) {
+            code() << "  " << res << " = load i64, ptr @" << node.name << "\n";
         } else {
-            code() << "  " << res << " = load i64, ptr %" << node->name << "." << func_name << "\n";
+            code() << "  " << res << " = load i64, ptr %" << node.name << "." << func_name << "\n";
         }
         return res;
     }
 
-    std::string visit_num(NumberExpr* node) override {
-        return std::to_string(node->value);
+    std::string visit_num(NumberExpr& node) override {
+        return std::to_string(node.value);
     }
 
-    std::string visit_string(StringExpr* node) override {
+    std::string visit_string(StringExpr& node) override {
         std::string str_id = consume_str_id();
         std::string escaped;
-        for (char c : node->value) {
+        for (char c : node.value) {
             if (c == '\n') escaped += "\\0A";
             else if (c == '"') escaped += "\\22";
             else if (c == '\\') escaped += "\\5C";
             else escaped += c;
         }
         escaped += "\\00";
-        header() << str_id << " = private constant [" << (node->value.size() + 1) << " x i8] c\"" << escaped << "\"\n";
+        header() << str_id << " = private constant [" << (node.value.size() + 1) << " x i8] c\"" << escaped << "\"\n";
         std::string ptr = consume_reg();
-        code() << "  " << ptr << " = getelementptr inbounds [" << (node->value.size() + 1) << " x i8], ptr " << str_id << ", i64 0, i64 0\n";
+        code() << "  " << ptr << " = getelementptr inbounds [" << (node.value.size() + 1) << " x i8], ptr " << str_id << ", i64 0, i64 0\n";
         std::string res = consume_reg();
         code() << "  " << res << " = ptrtoint ptr " << ptr << " to i64\n";  // A hack to make it consistent with the rest of the code
         return res;
     }
 
-    std::string visit_block(BlockStmt* node) override {
-        for (auto* statement : node->statements) {
+    std::string visit_block(BlockStmt& node) override {
+        for (auto* statement : node.statements) {
             statement->accept(*this);
         }
         return "";
     }
 
-    std::string visit_return(ReturnStmt* node) override {
-        std::string val = node->expr->accept(*this);
+    std::string visit_return(ReturnStmt& node) override {
+        std::string val = node.expr->accept(*this);
         code() << "  ret i64 " << val << "\n";
         return "";
     }
 
-    std::string visit_print(PrintStmt* node) override {
-        if (dynamic_cast<StringExpr*>(node->expr)) {
-            std::string val = node->expr->accept(*this);
+    std::string visit_print(PrintStmt& node) override {
+        if (dynamic_cast<StringExpr*>(node.expr)) {
+            std::string val = node.expr->accept(*this);
             code() << "  call i32 (i64, ...) @printf(i64 ptrtoint (ptr getelementptr inbounds ([5 x i8], ptr @.print_str, i64 0, i64 0) to i64), i64 " << val << ")\n";
         } else {
-            std::string val = node->expr->accept(*this);
+            std::string val = node.expr->accept(*this);
             code() << "  call i32 (i64, ...) @printf(i64 ptrtoint (ptr getelementptr inbounds ([4 x i8], ptr @.print_num, i64 0, i64 0) to i64), i64 " << val << ")\n";
         }
         return "";
     }
 
-    std::string visit_assign(AssignStmt* node) override {
-        std::string val = node->expr->accept(*this);
-        if (global_vars.count(node->var)) {
-            code() << "  store i64 " << val << ", ptr @" << node->var << "\n";
+    std::string visit_assign(AssignStmt& node) override {
+        std::string val = node.expr->accept(*this);
+        if (global_vars.count(node.var)) {
+            code() << "  store i64 " << val << ", ptr @" << node.var << "\n";
         } else {
-            auto var_name = node->var + "." + func_name;
+            auto var_name = node.var + "." + func_name;
             define_var(var_name);
             code() << "  store i64 " << val << ", ptr %" << var_name << "\n";
         }
         return "";
     }
 
-    std::string visit_if(IfStmt* node) override {
+    std::string visit_if(IfStmt& node) override {
         std::vector<std::string> labels;
         labels.push_back("then" + std::to_string(reg));
-        for (size_t i = 0; i < node->elseif_branches.size(); ++i) {
+        for (size_t i = 0; i < node.elseif_branches.size(); ++i) {
             labels.push_back("elseif" + std::to_string(reg + i + 1));
         }
-        labels.push_back(node->else_body ? "else" + std::to_string(reg + node->elseif_branches.size() + 1) : "end" + std::to_string(reg));
+        labels.push_back(node.else_body ? "else" + std::to_string(reg + node.elseif_branches.size() + 1) : "end" + std::to_string(reg));
         std::string end_label = "end" + std::to_string(reg);
-        reg += node->elseif_branches.size() + 2;
+        reg += node.elseif_branches.size() + 2;
 
-        std::string cond_val = node->cond->accept(*this);
+        std::string cond_val = node.cond->accept(*this);
         code() << "  br i1 " << cond_val << ", label %" << labels[0] << ", label %" << labels[1] << "\n";
 
         code() << labels[0] << ":\n";
-        node->then_body->accept(*this);
+        node.then_body->accept(*this);
         code() << "  br label %" << end_label << "\n";
 
-        for (size_t i = 0; i < node->elseif_branches.size(); ++i) {
+        for (size_t i = 0; i < node.elseif_branches.size(); ++i) {
             code() << labels[i + 1] << ":\n";
-            std::string elseif_cond = node->elseif_branches[i].first->accept(*this);
-            code() << "  br i1 " << elseif_cond << ", label %elseif_body" << (reg - node->elseif_branches.size() - 1 + i) << ", label %" << labels[i + 2] << "\n";
-            code() << "elseif_body" << (reg - node->elseif_branches.size() - 1 + i) << ":\n";
-            node->elseif_branches[i].second->accept(*this);
+            std::string elseif_cond = node.elseif_branches[i].first->accept(*this);
+            code() << "  br i1 " << elseif_cond << ", label %elseif_body" << (reg - node.elseif_branches.size() - 1 + i) << ", label %" << labels[i + 2] << "\n";
+            code() << "elseif_body" << (reg - node.elseif_branches.size() - 1 + i) << ":\n";
+            node.elseif_branches[i].second->accept(*this);
             code() << "  br label %" << end_label << "\n";
         }
 
-        if (node->else_body) {
+        if (node.else_body) {
             code() << labels.back() << ":\n";
-            node->else_body->accept(*this);
+            node.else_body->accept(*this);
             code() << "  br label %" << end_label << "\n";
         }
 
@@ -875,7 +906,7 @@ public:
         return "";
     }
 
-    std::string visit_while(WhileStmt* node) override {
+    std::string visit_while(WhileStmt& node) override {
         std::string cond_label = "while_cond" + std::to_string(reg);
         std::string body_label = "while_body" + std::to_string(reg);
         std::string end_label = "while_end" + std::to_string(reg);
@@ -883,30 +914,30 @@ public:
 
         code() << "  br label %" << cond_label << "\n";
         code() << cond_label << ":\n";
-        std::string cond_val = node->cond->accept(*this);
+        std::string cond_val = node.cond->accept(*this);
         code() << "  br i1 " << cond_val << ", label %" << body_label << ", label %" << end_label << "\n";
         code() << body_label << ":\n";
-        node->body->accept(*this);
+        node.body->accept(*this);
         code() << "  br label %" << cond_label << "\n";
         code() << end_label << ":\n";
         return "";
     }
 
-    std::string visit_goto(GotoStmt* node) override {
-        code() << "  br label %" << node->label << "." << func_name << "\n";
+    std::string visit_goto(GotoStmt& node) override {
+        code() << "  br label %" << node.label << "." << func_name << "\n";
         return "";
     }
 
-    std::string visit_label(LabelStmt* node) override {
-        auto label = node->name + "." + func_name;
+    std::string visit_label(LabelStmt& node) override {
+        auto label = node.name + "." + func_name;
         code() << "  br label %" << label << "\n";
         code() << label << ":\n";
-        node->stmt->accept(*this);
+        node.stmt->accept(*this);
         return "";
     }
 
-    std::string visit_expr_statement(ExprStatement* node) override {
-        node->expr->accept(*this);
+    std::string visit_expr_statement(ExprStatement& node) override {
+        node.expr->accept(*this);
         return "";
     }
 
@@ -1007,7 +1038,7 @@ public:
     ClangCompiler(std::string _clang_executable, std::string _extension)
         : clang_executable(std::move(_clang_executable)), extension("." + std::move(_extension)) { }
 
-    int compile(const std::span<std::string>& args) const {
+    [[nodiscard]] int compile(const std::span<std::string>& args) const {
         if (args.size() < 2) {
             std::cerr << "Usage: " << args[0] << " <file1> [file2] ... [clang options]\n";
             return 1;
