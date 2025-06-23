@@ -222,13 +222,6 @@ struct FuncDecl : ASTNode {
     std::string accept(Visitor& visitor) override;
 };
 
-struct GlobalVarDecl : ASTNode {
-    std::string name;
-    Expr* init;
-    GlobalVarDecl(std::string n, Expr* i) : name(std::move(n)), init(i) { }
-    std::string accept(Visitor& visitor) override;
-};
-
 struct BinaryExpr : Expr {
     TokenType op;
     Expr* left;
@@ -298,9 +291,22 @@ struct PrintStmt : Statement {
 };
 
 struct AssignStmt : Statement {
-    std::string var;
+    std::string name;
     Expr* expr;
-    AssignStmt(std::string v, Expr* e) : var(std::move(v)), expr(e) { }
+    AssignStmt(std::string v, Expr* e) : name(std::move(v)), expr(e) { }
+    std::string accept(Visitor& visitor) override;
+};
+
+struct GlobalVarDecl : Statement {
+    std::string name;
+    Expr* init;
+    GlobalVarDecl(std::string n, Expr* i) : name(std::move(n)), init(i) { }
+    std::string accept(Visitor& visitor) override;
+};
+
+struct ExternGlobalDecl : Statement {
+    std::string name;
+    explicit ExternGlobalDecl(std::string n) : name(std::move(n)) { }
     std::string accept(Visitor& visitor) override;
 };
 
@@ -346,21 +352,22 @@ struct Visitor {
     virtual std::string visit_def(FuncDef& node) { return visit_node(node); }
     virtual std::string visit_decl(FuncDecl& node) { return visit_node(node); }
 
-    virtual std::string visit_global_var_decl(GlobalVarDecl& node) { return visit_node(node); }
-    virtual std::string visit_expr(Expr& node) { (void)node; assert(false && "This method shouldn't be reached, or should be overridden"); }
-    virtual std::string visit_bin_expr(BinaryExpr& node) { return visit_expr(node); }
-    virtual std::string visit_unary_expr(UnaryExpr& node) { return visit_expr(node); }
-    virtual std::string visit_bool_expr(BooleanExpr& node) { return visit_expr(node); }
-    virtual std::string visit_call(CallExpr& node) { return visit_expr(node); }
-    virtual std::string visit_read(ReadExpr& node) { return visit_expr(node); }
-    virtual std::string visit_var(VarExpr& node) { return visit_expr(node); }
-    virtual std::string visit_num(NumberExpr& node) { return visit_expr(node); }
-    virtual std::string visit_string(StringExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_expr(Expr& node) { (void)node; assert(false && "This method shouldn't be reached, or should be overridden"); }
+    [[nodiscard]] virtual std::string visit_bin_expr(BinaryExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_unary_expr(UnaryExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_bool_expr(BooleanExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_call(CallExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_read(ReadExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_var(VarExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_num(NumberExpr& node) { return visit_expr(node); }
+    [[nodiscard]] virtual std::string visit_string(StringExpr& node) { return visit_expr(node); }
 
     virtual std::string visit_statement(Statement& node) { return visit_node(node); }
     virtual std::string visit_block(BlockStmt& node) { return visit_statement(node); }
     virtual std::string visit_return(ReturnStmt& node) { return visit_statement(node); }
     virtual std::string visit_print(PrintStmt& node) { return visit_statement(node); }
+    virtual std::string visit_global(GlobalVarDecl& node) { return visit_statement(node); }
+    virtual std::string visit_extern_global(ExternGlobalDecl& node) { return visit_statement(node); }
     virtual std::string visit_assign(AssignStmt& node) { return visit_statement(node); }
     virtual std::string visit_if(IfStmt& node) { return visit_statement(node); }
     virtual std::string visit_while(WhileStmt& node) { return visit_statement(node); }
@@ -385,6 +392,8 @@ std::string Statement::accept(Visitor &visitor) { return visitor.visit_statement
 std::string BlockStmt::accept(Visitor &visitor) { return visitor.visit_block(*this); }
 std::string ReturnStmt::accept(Visitor &visitor) { return visitor.visit_return(*this); }
 std::string PrintStmt::accept(Visitor &visitor) { return visitor.visit_print(*this); }
+std::string GlobalVarDecl::accept(Visitor &visitor) { return visitor.visit_global(*this); }
+std::string ExternGlobalDecl::accept(Visitor &visitor) { return visitor.visit_extern_global(*this); }
 std::string AssignStmt::accept(Visitor &visitor) { return visitor.visit_assign(*this); }
 std::string IfStmt::accept(Visitor &visitor) { return visitor.visit_if(*this); }
 std::string WhileStmt::accept(Visitor &visitor) { return visitor.visit_while(*this); }
@@ -393,10 +402,9 @@ std::string LabelStmt::accept(Visitor &visitor) { return visitor.visit_label(*th
 std::string ExprStatement::accept(Visitor &visitor) { return visitor.visit_expr_statement(*this); }
 std::string FuncDef::accept(Visitor &visitor) { return visitor.visit_def(*this); }
 std::string FuncDecl::accept(Visitor &visitor) { return visitor.visit_decl(*this); }
-std::string GlobalVarDecl::accept(Visitor &visitor) { return visitor.visit_global_var_decl(*this); }
 
 struct IntermediateCode {
-    std::vector<GlobalVarDecl*> globals;
+    std::vector<ASTNode*> globals;  // Can contain extern globals
     std::vector<FuncDecl*> declarations;
     std::vector<FuncDef*> functions;
     std::vector<ASTNode*> all_nodes;
@@ -572,6 +580,20 @@ public:
         return left;
     }
 
+    template <typename T>
+    T* parse_let() {
+        consume(LET);
+        std::string name = current.value;
+        consume(IDENTIFIER);
+        Expr* init = nullptr;
+        if (peek() == EQ) {
+            consume(EQ);
+            init = parse_expr_with_precedence();
+        }
+        consume(SEMI);
+        return new_node<T>(name, init);
+    }
+
     /**
      * Parses a statement from the input stream and constructs a corresponding syntax tree node.
      *
@@ -671,13 +693,7 @@ public:
         }
 
         if (peek() == LET) {
-            consume(LET);
-            std::string var = current.value;
-            consume(IDENTIFIER);
-            consume(EQ);
-            Expr* e = parse_expr_with_precedence();
-            consume(SEMI);
-            return new_node<AssignStmt>(var, e);
+            return parse_let<AssignStmt>();
         }
 
         auto expr_statement = new_node<ExprStatement>(parse_expr_with_precedence());
@@ -686,7 +702,6 @@ public:
     }
 
     std::vector<std::string> parse_func_common() {
-        consume(IDENTIFIER);
         consume(LPAREN);
         std::vector<std::string> params;
         if (peek() == IDENTIFIER) {
@@ -705,31 +720,22 @@ public:
     FuncDef* parse_func_def() {
         consume(DEF);
         const std::string name = current.value;
+        consume(IDENTIFIER);
         const auto params = parse_func_common();
         consume(EQ);
         Statement* body = parse_statement();
         return new_node<FuncDef>(name, params, body);
     }
 
-    FuncDecl* parse_func_decl() {
-        consume(EXTERN);
-        const std::string name = current.value;
+    FuncDecl* parse_func_decl(const std::string& name) {
         const auto params = parse_func_common();
         consume(SEMI);
         return new_node<FuncDecl>(name, params);
     }
 
-    GlobalVarDecl* parse_global_var() {
-        consume(LET);
-        std::string name = current.value;
-        consume(IDENTIFIER);
-        Expr* init = nullptr;
-        if (peek() == EQ) {
-            consume(EQ);
-            init = parse_expr_with_precedence();
-        }
+    ExternGlobalDecl* parse_extern_global(const std::string& name) {
         consume(SEMI);
-        return new_node<GlobalVarDecl>(name, init);
+        return new_node<ExternGlobalDecl>(name);
     }
 
     IntermediateCode parse() {
@@ -737,9 +743,16 @@ public:
             if (peek() == DEF) {
                 intermediate_code.functions.push_back(parse_func_def());
             } else if (peek() == EXTERN) {
-                intermediate_code.declarations.push_back(parse_func_decl());
+                consume(EXTERN);
+                auto name = current.value;
+                consume(IDENTIFIER);
+                if (peek() == SEMI) {
+                    intermediate_code.globals.push_back(parse_extern_global(name));
+                } else {
+                    intermediate_code.declarations.push_back(parse_func_decl(name));
+                }
             } else if (peek() == LET) {
-                intermediate_code.globals.push_back(parse_global_var());
+                intermediate_code.globals.push_back(parse_let<GlobalVarDecl>());
             } else {
                 throw std::runtime_error("Invalid top-level construct: " + current.value);
             }
@@ -748,27 +761,53 @@ public:
     }
 };
 
+/**
+ * A class responsible for generating LLVM IR (Intermediate Representation)
+ * code by traversing and processing an abstract syntax tree (AST).
+ *
+ * This class implements a visitor pattern to handle different types of AST
+ * nodes and produces corresponding LLVM IR code. The generated code consists
+ * of two main sections:
+ * - Header: Declarations and metadata required at the start of the IR file.
+ * - Code: Definitions of functions and statements.
+ *
+ * Internally, the class maintains counters for registers, labels, and string
+ * identifiers to ensure unique names during code generation. It also keeps
+ * track of defined variables within the current function scope and global
+ * variables for external linkage.
+ */
 template <typename OutStream>
 class CodeGenerator : public Visitor {
+    // The final output stream
     OutStream* out;
+
+    // The generated LLVM bitcode consists of two main parts: the header, which includes
+    // declarations and metadata, and the code section, which defines the actual functions
     std::ostringstream _header;
     std::ostringstream _code;
+
     std::unordered_set<std::string> defined_vars = { };
     std::unordered_set<std::string> global_vars = { };
     std::string func_name;
-    unsigned long long reg = 0;
+    unsigned long long reg_count = 0;
     unsigned long long str_count = 0;
+    unsigned long long label_count = 0;
 
     std::ostringstream& header() { return _header; }
     std::ostringstream& code() { return _code; }
 
     void reset() {
-        reg = 0;
+        reg_count = 0;
         defined_vars.clear();
     }
 
-    std::string consume_reg() { return "%reg" + std::to_string(reg++); }
+    std::string consume_reg() { return "%reg" + std::to_string(reg_count++); }
+
     std::string consume_str_id() { return "@.str." + std::to_string(str_count++); }
+
+    std::string consume_label(const std::string &name = "label") { return name + "." + std::to_string(label_count++); }
+
+    std::string get_label_name(const std::string& name) { return name + "." + func_name; }
 
     void define_var(const std::string& name) {
         bool is_new = defined_vars.insert(name).second;
@@ -777,36 +816,39 @@ class CodeGenerator : public Visitor {
         }
     }
 
+    void write_list(const std::vector<std::string>& list, std::string prefix, std::ostringstream& stream) {
+        prefix = "i64 " + prefix;
+        if (!list.empty()) {
+            stream << prefix << list[0];
+            for (size_t i = 1; i < list.size(); ++i) {
+                stream << ", " << prefix << list[i];
+            }
+        }
+    }
+
 public:
+
     explicit CodeGenerator(OutStream& _out) : out(&_out) { }
-
-    void add_global(const std::string& name) {
-        global_vars.insert(name);
-    }
-
-    std::string visit_global_var_decl(GlobalVarDecl& node) override {
-        add_global(node.name);
-        std::string init_val = node.init ? node.init->accept(*this) : "0";
-        header() << "@" << node.name << " = global i64 " << init_val << "\n";
-        return "";
-    }
 
     std::string visit_def(FuncDef& node) override {
         reset();
         func_name = node.name;
         code() << "define i64 @" << node.name << "(";
-        for (size_t i = 0; i < node.params.size(); ++i) {
-            code() << "i64 %" << node.params[i];
-            if (i < node.params.size() - 1) code() << ", ";
-        }
+        write_list(node.params, "%param.", code());
         code() << ") {\n";
         code() << "entry:\n";
         for (const auto& param : node.params) {
-            auto param_name = param + "." + node.name;
-            define_var(param_name);
-            code() << "  store i64 %" << param << ", ptr %" << param_name << "\n";
+            define_var(param);
+            code() << "  store i64 %param." << param << ", ptr %" << param << "\n";
         }
-        node.body->accept(*this);
+        if (auto expr_statement = dynamic_cast<ExprStatement*>(node.body); expr_statement != nullptr) {
+            // Statements don't return a value, but this is a special case,
+            // where we should return the expression in the expression statement
+            ReturnStmt ret { expr_statement->expr };
+            ret.accept(*this);
+        } else {
+            node.body->accept(*this);
+        }
         code() << "  ret i64 0\n";
         code() << "}\n\n";
         return "";
@@ -814,10 +856,7 @@ public:
 
     std::string visit_decl(FuncDecl& node) override {
         header() << "declare i64 @" << node.name << "(";
-        for (size_t i = 0; i < node.params.size(); ++i) {
-            header() << "i64";
-            if (i < node.params.size() - 1) header() << ", ";
-        }
+        write_list(node.params, "%", header());
         header() << ")\n";
         return "";
     }
@@ -859,13 +898,12 @@ public:
 
     std::string visit_unary_expr(UnaryExpr& node) override {
         std::string e = node.expr->accept(*this);
-        std::string inst;
+        std::string res = consume_reg();
         switch (node.op) {
-            case BIT_NOT: inst = "xor"; break;
+            // You can add more
+            case BIT_NOT: code() << "  " << res << " = xor i64 " << e << ", -1\n"; break;
             default: assert(false && "Invalid unary operator"); return "";
         }
-        std::string res = consume_reg();
-        code() << "  " << res << " = " << inst << " i64 " << e << ", -1\n";
         return res;
     }
 
@@ -884,37 +922,21 @@ public:
         }
         std::string res = consume_reg();
         code() << "  " << res << " = call i64 @" << node.func_name << "(";
-        for (size_t i = 0; i < arg_regs.size(); ++i) {
-            code() << "i64 " << arg_regs[i];
-            if (i < arg_regs.size() - 1) code() << ", ";
-        }
+        write_list(arg_regs, "", code());
         code() << ")\n";
         return res;
     }
 
     std::string visit_read(ReadExpr& node) override {
         (void)node;
-
         const std::string ptr = consume_reg();
         std::string ptr_i64 = consume_reg();
         code() << "  " << ptr << " = alloca i64\n";
         code() << "  " << ptr_i64 << " = ptrtoint ptr " << ptr << " to i64\n";
-
         code() << "  call i32 (i64, ...) @scanf(i64 ptrtoint (ptr getelementptr inbounds "
                   "([4 x i8], ptr @.read_num, i64 0, i64 0) to i64), i64 " << ptr_i64 << ")\n";
-
         std::string res = consume_reg();
         code() << "  " << res << " = load i64, ptr " << ptr << "\n";
-        return res;
-    }
-
-    std::string visit_var(VarExpr& node) override {
-        std::string res = consume_reg();
-        if (global_vars.count(node.name)) {
-            code() << "  " << res << " = load i64, ptr @" << node.name << "\n";
-        } else {
-            code() << "  " << res << " = load i64, ptr %" << node.name << "." << func_name << "\n";
-        }
         return res;
     }
 
@@ -954,39 +976,76 @@ public:
     }
 
     std::string visit_print(PrintStmt& node) override {
+        std::string val = node.expr->accept(*this);
+        code() << "  call i32 (i64, ...) @printf(i64 ptrtoint (ptr getelementptr inbounds (";
         if (dynamic_cast<StringExpr*>(node.expr)) {
-            std::string val = node.expr->accept(*this);
-            code() << "  call i32 (i64, ...) @printf(i64 ptrtoint (ptr getelementptr inbounds ([5 x i8], ptr @.print_str, i64 0, i64 0) to i64), i64 " << val << ")\n";
+            code() << "[5 x i8], ptr @.print_str";
         } else {
-            std::string val = node.expr->accept(*this);
-            code() << "  call i32 (i64, ...) @printf(i64 ptrtoint (ptr getelementptr inbounds ([4 x i8], ptr @.print_num, i64 0, i64 0) to i64), i64 " << val << ")\n";
+            code() << "[4 x i8], ptr @.print_num";
         }
+        code() << ", i64 0, i64 0) to i64), i64 " << val << ")\n";
+        return "";
+    }
+
+    std::string visit_global(GlobalVarDecl& node) override {
+        bool is_new = global_vars.insert(node.name).second;
+        if (!is_new) {
+            throw std::runtime_error("Multiple definitions of global variable: " + node.name);
+        }
+        if (node.init != nullptr && !dynamic_cast<NumberExpr*>(node.init)) {
+            // For simplicity. If you want, you can make use of @llvm.global_ctors.
+            throw std::runtime_error("Cannot assign a non-const number to a global variable: " + node.name);
+        }
+        std::string init_val = node.init ? node.init->accept(*this) : "0";
+        header() << "@" << node.name << " = global i64 " << init_val << "\n";
+        return "";
+    }
+
+    std::string visit_extern_global(ExternGlobalDecl& node) override {
+        bool is_new = global_vars.insert(node.name).second;
+        if (!is_new) {
+            throw std::runtime_error("Multiple definitions of (extern) global variable: " + node.name);
+        }
+        header() << "@" << node.name << " = external global i64 \n";
         return "";
     }
 
     std::string visit_assign(AssignStmt& node) override {
-        std::string val = node.expr->accept(*this);
-        if (global_vars.count(node.var)) {
-            code() << "  store i64 " << val << ", ptr @" << node.var << "\n";
+        std::string val = node.expr ? node.expr->accept(*this) : "0";
+        if (global_vars.contains(node.name)) {
+            code() << "  store i64 " << val << ", ptr @" << node.name << "\n";
         } else {
-            auto var_name = node.var + "." + func_name;
-            define_var(var_name);
-            code() << "  store i64 " << val << ", ptr %" << var_name << "\n";
+            define_var(node.name);
+            code() << "  store i64 " << val << ", ptr %" << node.name << "\n";
         }
         return "";
     }
 
+    std::string visit_var(VarExpr& node) override {
+        std::string res = consume_reg();
+        if (global_vars.contains(node.name)) {
+            code() << "  " << res << " = load i64, ptr @" << node.name << "\n";
+        } else if (defined_vars.contains(node.name)) {
+            code() << "  " << res << " = load i64, ptr %" << node.name << "\n";
+        } else {
+            throw std::runtime_error("Undefined variable: " + node.name);
+        }
+        return res;
+    }
+
     std::string visit_if(IfStmt& node) override {
         std::vector<std::string> labels;
-        labels.push_back("then" + std::to_string(reg));
+        labels.reserve(node.elseif_branches.size() + 2);
+        labels.push_back(consume_label("then"));
+        auto elseif_label_base = label_count;
         for (size_t i = 0; i < node.elseif_branches.size(); ++i) {
-            labels.push_back("elseif" + std::to_string(reg + i + 1));
+            labels.push_back(consume_label("elseif"));
         }
-        labels.push_back(node.else_body ? "else" + std::to_string(reg + node.elseif_branches.size() + 1) : "end" + std::to_string(reg));
-        std::string end_label = "end" + std::to_string(reg);
-        reg += node.elseif_branches.size() + 2;
+        auto else_label = consume_label("else");
+        auto end_label = consume_label("end");
+        labels.push_back(node.else_body ? else_label : end_label);
 
-        std::string cond_val = node.cond->accept(*this);
+        auto cond_val = node.cond->accept(*this);
         code() << "  br i1 " << cond_val << ", label %" << labels[0] << ", label %" << labels[1] << "\n";
 
         code() << labels[0] << ":\n";
@@ -994,16 +1053,17 @@ public:
         code() << "  br label %" << end_label << "\n";
 
         for (size_t i = 0; i < node.elseif_branches.size(); ++i) {
+            auto branch_num = elseif_label_base + i;
             code() << labels[i + 1] << ":\n";
-            std::string elseif_cond = node.elseif_branches[i].first->accept(*this);
-            code() << "  br i1 " << elseif_cond << ", label %elseif_body" << (reg - node.elseif_branches.size() - 1 + i) << ", label %" << labels[i + 2] << "\n";
-            code() << "elseif_body" << (reg - node.elseif_branches.size() - 1 + i) << ":\n";
+            auto elseif_cond = node.elseif_branches[i].first->accept(*this);
+            code() << "  br i1 " << elseif_cond << ", label %elseif_body." << branch_num << ", label %" << labels[i + 2] << "\n";
+            code() << "elseif_body." << branch_num << ":\n";
             node.elseif_branches[i].second->accept(*this);
             code() << "  br label %" << end_label << "\n";
         }
 
         if (node.else_body) {
-            code() << labels.back() << ":\n";
+            code() << else_label << ":\n";
             node.else_body->accept(*this);
             code() << "  br label %" << end_label << "\n";
         }
@@ -1013,14 +1073,14 @@ public:
     }
 
     std::string visit_while(WhileStmt& node) override {
-        std::string cond_label = "while_cond" + std::to_string(reg);
-        std::string body_label = "while_body" + std::to_string(reg);
-        std::string end_label = "while_end" + std::to_string(reg);
-        reg++;
+        auto cond_label = "while_cond." + std::to_string(label_count);
+        auto body_label = "while_body." + std::to_string(label_count);
+        auto end_label = "while_end." + std::to_string(label_count);
+        ++label_count;
 
         code() << "  br label %" << cond_label << "\n";
         code() << cond_label << ":\n";
-        std::string cond_val = node.cond->accept(*this);
+        auto cond_val = node.cond->accept(*this);
         code() << "  br i1 " << cond_val << ", label %" << body_label << ", label %" << end_label << "\n";
         code() << body_label << ":\n";
         node.body->accept(*this);
@@ -1030,12 +1090,12 @@ public:
     }
 
     std::string visit_goto(GotoStmt& node) override {
-        code() << "  br label %" << node.label << "." << func_name << "\n";
+        code() << "  br label %" << get_label_name(node.label) << "\n";
         return "";
     }
 
     std::string visit_label(LabelStmt& node) override {
-        auto label = node.name + "." + func_name;
+        auto label = get_label_name(node.name);
         code() << "  br label %" << label << "\n";
         code() << label << ":\n";
         node.stmt->accept(*this);
@@ -1049,21 +1109,24 @@ public:
 
     void generate(const IntermediateCode& ir) {
         header() << "; ModuleID = 'simple'\n";
-        header() << "@.print_num = private constant [5 x i8] c\"%ld\\0A\\00\"\n";
-        header() << "@.print_str = private constant [4 x i8] c\"%s\\0A\\00\"\n";
-        header() << "@.read_num = private constant [4 x i8] c\"%ld\\00\"\n";
 
-        for (auto* global : ir.globals) {
-            global->accept(*this);
-        }
-        for (auto* func : ir.functions) {
-            func->accept(*this);
-        }
         // This is a hack, declaring printf and scanf as taking an i64
         header() << "declare i32 @printf(i64, ...)\n";
         header() << "declare i32 @scanf(i64, ...)\n";
         for (auto* decl : ir.declarations) {
             decl->accept(*this);
+        }
+
+        for (auto* global : ir.globals) {
+            global->accept(*this);
+        }
+
+        header() << "@.print_num = private constant [5 x i8] c\"%ld\\0A\\00\"\n";
+        header() << "@.print_str = private constant [4 x i8] c\"%s\\0A\\00\"\n";
+        header() << "@.read_num = private constant [4 x i8] c\"%ld\\00\"\n";
+
+        for (auto* func : ir.functions) {
+            func->accept(*this);
         }
 
         *out << header().str() << '\n' << code().str();
