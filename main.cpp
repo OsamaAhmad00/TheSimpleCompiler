@@ -191,19 +191,19 @@ public:
     }
 };
 
-struct Visitor;
+struct ASTVisitor;
 
 struct ASTNode {
     virtual ~ASTNode() = default;
-    virtual std::string accept(Visitor& visitor);
+    virtual std::string accept(ASTVisitor& visitor);
 };
 
 struct Expr : ASTNode {
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct Statement : ASTNode {
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct FuncDef : ASTNode {
@@ -212,14 +212,14 @@ struct FuncDef : ASTNode {
     Statement* body;
     FuncDef(std::string n, const std::vector<std::string>& p, Statement* b)
         : name(std::move(n)), params(p), body(b) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct FuncDecl : ASTNode {
     std::string name;
     std::vector<std::string> params;
     FuncDecl(std::string n, const std::vector<std::string>& p) : name(std::move(n)), params(p) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct BinaryExpr : Expr {
@@ -227,87 +227,87 @@ struct BinaryExpr : Expr {
     Expr* left;
     Expr* right;
     BinaryExpr(TokenType o, Expr* l, Expr* r) : op(o), left(l), right(r) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct UnaryExpr : Expr {
     TokenType op;
     Expr* expr;
     UnaryExpr(TokenType o, Expr* e) : op(o), expr(e) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct BooleanExpr : Expr {
     Expr* expr;
     explicit BooleanExpr(Expr* e) : expr(e) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct CallExpr : Expr {
     std::string func_name;
     std::vector<Expr*> args;
     CallExpr(std::string fn, const std::vector<Expr*>& a) : func_name(std::move(fn)), args(a) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct ReadExpr : Expr {
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct VarExpr : Expr {
     std::string name;
     explicit VarExpr(std::string n) : name(std::move(n)) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct NumberExpr : Expr {
     int64_t value;
     explicit NumberExpr(const int64_t v) : value(v) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct StringExpr : Expr {
     std::string value;
     explicit StringExpr(std::string v) : value(std::move(v)) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct BlockStmt : Statement {
     std::vector<Statement*> statements;
     explicit BlockStmt(std::vector<Statement*> s) : statements(std::move(s)) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct ReturnStmt : Statement {
     Expr* expr;
     explicit ReturnStmt(Expr* e) : expr(e) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct PrintStmt : Statement {
     Expr* expr;
     explicit PrintStmt(Expr* e) : expr(e) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct AssignStmt : Statement {
     std::string name;
     Expr* expr;
     AssignStmt(std::string v, Expr* e) : name(std::move(v)), expr(e) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct GlobalVarDecl : Statement {
     std::string name;
     Expr* init;
     GlobalVarDecl(std::string n, Expr* i) : name(std::move(n)), init(i) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct ExternGlobalDecl : Statement {
     std::string name;
     explicit ExternGlobalDecl(std::string n) : name(std::move(n)) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct IfStmt : Statement {
@@ -317,37 +317,37 @@ struct IfStmt : Statement {
     Statement* else_body;
     IfStmt(Expr* c, Statement* t, const std::vector<std::pair<Expr*, Statement*>>& ei, Statement* e)
         : cond(c), then_body(t), elseif_branches(ei), else_body(e) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct WhileStmt : Statement {
     Expr* cond;
     Statement* body;
     WhileStmt(Expr* c, Statement* b) : cond(c), body(b) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct GotoStmt : Statement {
     std::string label;
     explicit GotoStmt(std::string l) : label(std::move(l)) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct LabelStmt : Statement {
     std::string name;
     Statement* stmt;
     LabelStmt(std::string n, Statement* s) : name(std::move(n)), stmt(s) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 struct ExprStatement : Statement {
     Expr* expr;
     explicit ExprStatement(Expr* e) : expr(e) { }
-    std::string accept(Visitor& visitor) override;
+    std::string accept(ASTVisitor& visitor) override;
 };
 
 /**
- * The Visitor class implements the Visitor design pattern for traversing and operating on AST nodes.
+ * The ASTVisitor class implements the visitor design pattern for traversing and operating on AST nodes.
  * 
  * This pattern provides a flexible way to perform operations on AST nodes without modifying their classes.
  * Instead of embedding operation-specific code within node classes (like code generation, type checking,
@@ -371,12 +371,12 @@ struct ExprStatement : Statement {
  * - Maintainability: Operations are centralized in visitor classes rather than scattered across node classes
  *
  * To implement a new operation on the AST:
- * 1. Create a new class inheriting from Visitor
+ * 1. Create a new class inheriting from ASTVisitor
  * 2. Add any operation-specific state as member variables
  * 3. Override the relevant visit methods for the nodes you want to process
  * 4. Call accept() on the root node with your visitor
  */
-struct Visitor {
+struct ASTVisitor {
     virtual std::string visit_node(ASTNode& node) { (void)node; return ""; }
 
     virtual std::string visit_def(FuncDef& node) { return visit_node(node); }
@@ -405,33 +405,33 @@ struct Visitor {
     virtual std::string visit_label(LabelStmt& node) { return visit_statement(node); }
     virtual std::string visit_expr_statement(ExprStatement& node) { return visit_statement(node); }
 
-    virtual ~Visitor() = default;
+    virtual ~ASTVisitor() = default;
 };
 
-std::string ASTNode::accept(Visitor &visitor) { return visitor.visit_node(*this); }
-std::string Expr::accept(Visitor &visitor) { return visitor.visit_expr(*this); }
-std::string BinaryExpr::accept(Visitor &visitor) { return visitor.visit_bin_expr(*this); }
-std::string UnaryExpr::accept(Visitor &visitor) { return visitor.visit_unary_expr(*this); }
-std::string BooleanExpr::accept(Visitor &visitor) { return visitor.visit_bool_expr(*this); }
-std::string CallExpr::accept(Visitor &visitor) { return visitor.visit_call(*this); }
-std::string ReadExpr::accept(Visitor &visitor) { return visitor.visit_read(*this); }
-std::string VarExpr::accept(Visitor &visitor) { return visitor.visit_var(*this); }
-std::string NumberExpr::accept(Visitor &visitor) { return visitor.visit_num(*this); }
-std::string StringExpr::accept(Visitor &visitor) { return visitor.visit_string(*this); }
-std::string Statement::accept(Visitor &visitor) { return visitor.visit_statement(*this); }
-std::string BlockStmt::accept(Visitor &visitor) { return visitor.visit_block(*this); }
-std::string ReturnStmt::accept(Visitor &visitor) { return visitor.visit_return(*this); }
-std::string PrintStmt::accept(Visitor &visitor) { return visitor.visit_print(*this); }
-std::string GlobalVarDecl::accept(Visitor &visitor) { return visitor.visit_global(*this); }
-std::string ExternGlobalDecl::accept(Visitor &visitor) { return visitor.visit_extern_global(*this); }
-std::string AssignStmt::accept(Visitor &visitor) { return visitor.visit_assign(*this); }
-std::string IfStmt::accept(Visitor &visitor) { return visitor.visit_if(*this); }
-std::string WhileStmt::accept(Visitor &visitor) { return visitor.visit_while(*this); }
-std::string GotoStmt::accept(Visitor &visitor) { return visitor.visit_goto(*this); }
-std::string LabelStmt::accept(Visitor &visitor) { return visitor.visit_label(*this); }
-std::string ExprStatement::accept(Visitor &visitor) { return visitor.visit_expr_statement(*this); }
-std::string FuncDef::accept(Visitor &visitor) { return visitor.visit_def(*this); }
-std::string FuncDecl::accept(Visitor &visitor) { return visitor.visit_decl(*this); }
+std::string ASTNode::accept(ASTVisitor &visitor) { return visitor.visit_node(*this); }
+std::string Expr::accept(ASTVisitor &visitor) { return visitor.visit_expr(*this); }
+std::string BinaryExpr::accept(ASTVisitor &visitor) { return visitor.visit_bin_expr(*this); }
+std::string UnaryExpr::accept(ASTVisitor &visitor) { return visitor.visit_unary_expr(*this); }
+std::string BooleanExpr::accept(ASTVisitor &visitor) { return visitor.visit_bool_expr(*this); }
+std::string CallExpr::accept(ASTVisitor &visitor) { return visitor.visit_call(*this); }
+std::string ReadExpr::accept(ASTVisitor &visitor) { return visitor.visit_read(*this); }
+std::string VarExpr::accept(ASTVisitor &visitor) { return visitor.visit_var(*this); }
+std::string NumberExpr::accept(ASTVisitor &visitor) { return visitor.visit_num(*this); }
+std::string StringExpr::accept(ASTVisitor &visitor) { return visitor.visit_string(*this); }
+std::string Statement::accept(ASTVisitor &visitor) { return visitor.visit_statement(*this); }
+std::string BlockStmt::accept(ASTVisitor &visitor) { return visitor.visit_block(*this); }
+std::string ReturnStmt::accept(ASTVisitor &visitor) { return visitor.visit_return(*this); }
+std::string PrintStmt::accept(ASTVisitor &visitor) { return visitor.visit_print(*this); }
+std::string GlobalVarDecl::accept(ASTVisitor &visitor) { return visitor.visit_global(*this); }
+std::string ExternGlobalDecl::accept(ASTVisitor &visitor) { return visitor.visit_extern_global(*this); }
+std::string AssignStmt::accept(ASTVisitor &visitor) { return visitor.visit_assign(*this); }
+std::string IfStmt::accept(ASTVisitor &visitor) { return visitor.visit_if(*this); }
+std::string WhileStmt::accept(ASTVisitor &visitor) { return visitor.visit_while(*this); }
+std::string GotoStmt::accept(ASTVisitor &visitor) { return visitor.visit_goto(*this); }
+std::string LabelStmt::accept(ASTVisitor &visitor) { return visitor.visit_label(*this); }
+std::string ExprStatement::accept(ASTVisitor &visitor) { return visitor.visit_expr_statement(*this); }
+std::string FuncDef::accept(ASTVisitor &visitor) { return visitor.visit_def(*this); }
+std::string FuncDecl::accept(ASTVisitor &visitor) { return visitor.visit_decl(*this); }
 
 struct IntermediateCode {
     std::vector<ASTNode*> globals;  // Can contain extern globals
@@ -807,7 +807,7 @@ public:
  * variables for external linkage.
  */
 template <typename OutStream>
-class CodeGenerator : public Visitor {
+class CodeGenerator : public ASTVisitor {
     // The final output stream
     OutStream* out;
 
